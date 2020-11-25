@@ -7,7 +7,7 @@ exception_flags_init = ExprId("exception_flags_init", 32)
 
 
 # General-purpose registers (R0 - R7) names
-gpr_names = ["EBP", "EAX", "ECX", "EDX", "ESI", "EDI", "ESP", "EIP"]  # register names
+gpr_names = ["EBP", "EAX", "ECX", "EDX", "EBX", "ESI", "EDI", "ESP"]  # register names
 gpr_exprs, gpr_inits, gpr_infos = gen_regs(gpr_names, globals())  # sz=32 bits (default)
 csr_names = ["PC", "SP"]
 csr_exprs, csr_inits, csr_infos = gen_regs(csr_names, globals())

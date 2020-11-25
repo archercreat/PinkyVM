@@ -229,6 +229,3 @@ class ir_pinky(IntermediateRepresentation):
     args = instr.args
     instr_ir, extra_ir = mnemo_func[instr.name](self, instr, *args)
     return instr_ir, extra_ir
-
-
-  
