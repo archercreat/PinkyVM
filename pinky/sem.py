@@ -5,209 +5,160 @@ from miasm.arch.pinky.regs import *
 from miasm.arch.pinky.arch import mn_pinky
 from miasm.ir.ir import IntermediateRepresentation
 
+def update_flag_zf(a):
+  return [ExprAssign(ZF, ExprOp("FLAG_EQ", a))]
 
-QP = SP
-QP_init = SP_init
-def loc_key_bitness(loc, bits):
-  if not loc.is_loc():
-    return loc
-  return ExprLoc(loc.loc_key, bits)
+def update_flag_zf_eq(a, b):
+    return [ExprAssign(ZF, ExprOp("FLAG_EQ_CMP", a, b))]
 
-def get_main_reg(reg):
-  sz = reg.size
-  if reg.is_id():
-    if sz == 8:
-      main_reg = convert8[reg]
-    elif sz == 16:
-      main_reg = convert16[reg]
-    elif sz ==32 :
-      main_reg = reg
-    else:
-      raise RuntimeError
-    return main_reg
-
-def mov(_, instr, val, reg):
-  if val.is_int():
-    e = [ExprAssign(reg, ExprInt(int(val), reg.size))]
+def mov(_, instr, dst, src):
+  e = []
+  if src.is_int() and src.size == 16:
+    # mov0
+    e += [ExprAssign(dst, ExprInt(int(src), dst.size))]
+  elif instr.name == 'MOV3':
+    e += [ExprAssign(src, dst)]
   else:
-    e = [ExprAssign(reg, val)]
+    # mov1
+    e += [ExprAssign(dst, src)]
   return e, []
 
-def add(_, instr, reg1, reg2):
-  result = reg1 + reg2
-  e = [ExprAssign(reg2, result)]
+def add(_, instr, dst, src1, src2):
+  result = src1 + src2
+  e = [ExprAssign(dst, result)]
+  e += update_flag_zf_eq(result, ExprInt(0, dst.size))
   return e, []
 
-def sub(_, instr, reg1, reg2):
-  result = reg1 - reg2
-  e = [ExprAssign(reg2, result)]
+def sub(_, instr, dst, src1, src2):
+  result = src1 - src2
+  e = [ExprAssign(dst, result)]
+  e += update_flag_zf_eq(result, ExprInt(0, dst.size))
   return e, []
 
-def mul(_, instr, reg1, reg2):
-  result = reg1 * reg2
-  e = [ExprAssign(reg2, result)]
+def mul(_, instr, dst, src1, src2):
+  result = src1 * src2
+  e = [ExprAssign(dst, result)]
+  e += update_flag_zf_eq(result, ExprInt(0, dst.size))
   return e, []
 
-def div(_, instr, reg1, reg2):
-  result = reg1 / reg2
-  e = [ExprAssign(reg2, result)]
+def div(_, instr, dst, src1, src2):
+  result = src1 / src2
+  e = [ExprAssign(dst, result)]
+  e += update_flag_zf_eq(result, ExprInt(0, dst.size))
   return e, []
 
-def mod(_, instr, reg1, reg2):
-  result = reg1 % reg2
-  e = [ExprAssign(reg2, result)]
+def v_and(_, instr, dst, src1, src2):
+  result = src1 & src2
+  e = [ExprAssign(dst, result)]
+  e += update_flag_zf_eq(result, ExprInt(0, dst.size))
   return e, []
 
-def v_and(_, instr, reg1, reg2):
-  result = reg1 & reg2
-  e = [ExprAssign(reg2, result)]
+def v_or(_, instr, dst, src1, src2):
+  result = src1 | src2
+  e = [ExprAssign(dst, result)]
+  e += update_flag_zf_eq(result, ExprInt(0, dst.size))
   return e, []
 
-def v_or(_, instr, reg1, reg2):
-  result = reg1 | reg2
-  e = [ExprAssign(reg2, result)]
-  return e, []
-
-def xor(_, instr, reg1, reg2):
-  result = reg1 ^ reg2
-  e = [ExprAssign(reg2, result)]
-  return e, []
-
-def jmp(ir, instr, imm):
-  if imm.is_loc():
-    imm = loc_key_bitness(imm, 32)
+def xor(_, instr, dst, src1, src2):
   e = []
-  e += [ExprAssign(PC, imm)]
-  e += [ExprAssign(ir.IRDst, imm)]
+  result = src1 ^ src2
+  e += [ExprAssign(dst, result)]
+  e += update_flag_zf_eq(result, ExprInt(0, dst.size))
   return e, []
 
-def je(ir, instr, reg1, reg2, imm):
+def inc(ir, instr, dst):
+  e      = []
+  src    = ExprInt(1, dst.size)
+  null   = ExprInt(0, dst.size)
+  result = dst + src
+  e += [ExprAssign(dst, result)]
+  e += update_flag_zf_eq(result, null)
+  return e, []
+
+def dec(ir, instr, dst):
+  e      = []
+  src    = ExprInt(1, dst.size)
+  null   = ExprInt(0, dst.size)
+  result = dst - src
+  e += [ExprAssign(dst, result)]
+  e += update_flag_zf_eq(result, null)
+  return e, []
+
+def jmp(ir, instr, dst):
+  e = []
+  if dst.is_int():
+    dst = ExprInt(dst, PC.size)
+  elif dst.is_loc():
+    dst = ExprLoc(dst.loc_key, PC.size)
+
+  e += [ExprAssign(PC, dst)]
+  e += [ExprAssign(ir.IRDst, dst)]
+  return e, []
+
+def je(ir, instr, dst):
+  e = []
+  if dst.is_int():
+    dst = ExprInt(dst, PC.size)
+  elif dst.is_loc():
+    dst = ExprLoc(dst.loc_key, PC.size)
+
   loc_next = ir.get_next_loc_key(instr)
-  loc_next_expr = ExprLoc(loc_next, 32)
-  e = []
-
-  cmp = ExprOp("FLAG_EQ_CMP", reg1, reg2)
-  e += [ExprAssign(PC, ExprCond(cmp, imm, loc_next_expr))]
-  e += [ExprAssign(ir.IRDst, ExprCond(cmp, reg1, reg2), imm, loc_next_expr)]
+  loc_next_expr = ExprLoc(loc_next, ir.IRDst.size)
+  e += [ExprAssign(PC, ExprCond(ZF, dst, loc_next_expr))]
+  e += [ExprAssign(ir.IRDst, ExprCond(ZF, dst, loc_next_expr))]
   return e, []
-  
-def jne(ir, instr, reg1, reg2, imm):
+
+def jne(ir, instr, dst):
+  e = []
+  if dst.is_int():
+    dst = ExprInt(dst, PC.size)
+  elif dst.is_loc():
+    dst = ExprLoc(dst.loc_key, PC.size)
+
   loc_next = ir.get_next_loc_key(instr)
-  loc_next_expr = ExprLoc(loc_next, 32)
-  e = []
-  imm = loc_key_bitness(imm, 32)
-  cmp = ExprOp("FLAG_EQ_CMP", reg1, reg2)
-  e += [ExprAssign(PC, ExprCond(cmp, loc_next_expr, imm))]
-  e += [ExprAssign(ir.IRDst, ExprCond(cmp, loc_next_expr, imm))]
-  return e, []
-  
-def jge(ir, instr, reg1, reg2, imm):
-  loc_next = ir.get_next_loc_key(instr)
-  loc_next_expr = ExprLoc(loc_next, 32)
-  e = []
-  imm = loc_key_bitness(imm, 32)
-  cmp = ExprOp("CC_U>=", reg1, reg2)
-  e += [ExprAssign(PC, ExprCond(cmp, imm, loc_next_expr))]
-  e += [ExprAssign(ir.IRDst, ExprCond(cmp, imm, loc_next_expr))]
-  return e, []
-  
-def jl(ir, instr, reg1, reg2, imm):
-  loc_next = ir.get_next_loc_key(instr)
-  loc_next_expr = ExprLoc(loc_next, 32)
-  e = []
-  imm = loc_key_bitness(imm, 32)
-  cmp = ExprOp("CC_U<", reg1, reg2)
-  e += [ExprAssign(PC, ExprCond(cmp, imm, loc_next_expr))]
-  e += [ExprAssign(ir.IRDst, ExprCond(cmp, imm, loc_next_expr))]
+  loc_next_expr = ExprLoc(loc_next, ir.IRDst.size)
+  e += [ExprAssign(PC, ExprCond(ZF, loc_next_expr, dst))]
+  e += [ExprAssign(ir.IRDst, ExprCond(ZF, loc_next_expr, dst))]
   return e, []
 
-def v_str(_, instr, reg):
+def cmp(ir, instr, dst, src):
   e = []
-  e += [ExprAssign(ExprMem(SP, SP.size), reg)]
-  e += [ExprAssign(SP, ExprOp('+', SP, ExprInt(4, SP.size)))]
+  if src.is_int():
+    src = ExprInt(int(src), dst.size)
+  result = dst - src
+  null = ExprInt(0, dst.size)
+  e += update_flag_zf_eq(result, null)
   return e, []
 
-def v_strb(_, instr, reg):
+def ret(ir, instr):
   e = []
-  e += [ExprAssign(ExprMem(SP, 8), reg[0:8])]
-  e += [ExprAssign(SP, ExprOp('+', SP, ExprInt(1, SP.size)))]
+  e += [ExprAssign(PC, ExprId('VMEXIT', PC.size))]
+  e += [ExprAssign(ir.IRDst, ExprId('VMEXIT', ir.IRDst.size))]
   return e, []
 
-def v_strw(_, instr, reg):
-  e = []
-  e += [ExprAssign(ExprMem(SP, 16), reg[0:16])]
-  e += [ExprAssign(SP, ExprOp('+', SP, ExprInt(2, SP.size)))]
-  return e, []
-
-def cls(_, instr):
-  e =  []
-  e += [ExprAssign(SP, SP_init)]
-  e += [ExprAssign(QP, QP_init)]
-  return e, []
-
-def vmexit(ir, instr):
-  e = []
-  e += [ExprAssign(PC, ExprId("VMEXIT", 32))]
-  e += [ExprAssign(ir.IRDst, ExprId("VMEXIT", 32))]
-  return e, []
-
-def read_input(ir, instr, imm):
-  e = []
-  imm = ExprInt(int(imm), ir.sp.size)
-  e += ir.call_effects(ExprId("scanf", 32), imm)
-  return e, []
-
-def prn(ir, instr):
-  e = []
-  e += ir.call_effects(ExprId("puts", 32), ir.qp)
-  exprs, _ = cls(ir, instr)
-  e += exprs
-  return e, []
-
-def ldr(_, instr, reg):
-  e = []
-  e += [ExprAssign(reg, ExprMem(QP, QP.size))]
-  e += [ExprAssign(QP, ExprOp('+', QP, ExprInt(4, QP.size)))]
-  return e, []
-
-def ldrb(_, instr, reg):
-  e = []
-  e += [ExprAssign(reg, ExprMem(QP, 8).zeroExtend(reg.size))]
-  e += [ExprAssign(QP, ExprOp('+', QP, ExprInt(1, QP.size)))]
-  return e, []
-
-def ldrw(_, instr, reg):
-  e = []
-  
-  e += [ExprAssign(reg, ExprMem(QP, 16)).zeroExtend(reg.size)]
-  e += [ExprAssign(QP, ExprOp('+', QP, ExprInt(1, QP.size)))]
-  return e, []
+def nop(ir, instr):
+  return [], []
 
 mnemo_func = {
     "MOV": mov,
+    "MOV1": mov,
+    "MOV2": mov,
+    "MOV3": mov,
     "ADD": add,
     "SUB": sub,
     "MUL": mul,
     "DIV": div,
-    "MOD": mod,
+    "INC": inc,
+    "DEC": dec,
     "AND": v_and,
-    "OR": v_or,
+    "OR":  v_or,
     "XOR": xor,
     "JMP": jmp,
-    "JE": je,
+    "JE":  je,
     "JNE": jne,
-    "JGE": jge,
-    "JL": jl,
-    "STR": v_str,
-    "STRB": v_strb,
-    "STRW": v_strw,
-    "CLS": cls,
-    "VMEXIT": vmexit,
-    "PRN" : prn,
-    "READ_INPUT": read_input,
-    "LDR": ldr,
-    "LDRB": ldrb,
-    "LDRW": ldrw,
+    "CMP": cmp,
+    "RET": ret,
+    "NOP": nop
 }
 
 
@@ -221,7 +172,7 @@ class ir_pinky(IntermediateRepresentation):
     IntermediateRepresentation.__init__(self, mn_pinky, None, loc_db)
     self.pc = mn_pinky.getpc()
     self.sp = mn_pinky.getsp()
-    self.qp = mn_pinky.getqp()
+    self.ret_reg = EAX
     self.IRDst = ExprId("IRDst", 32)
 
   def get_ir(self, instr):

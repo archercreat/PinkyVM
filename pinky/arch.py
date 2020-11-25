@@ -29,15 +29,7 @@ deref_reg = (LBRACK + base_expr + RBRACK).setParseAction(cb_deref_base_expr)
 
 class instruction_pinky(instruction):
   """Generic pinky instruction
-  Notes:
-      - this object is used to build internal miasm instructions based
-        on mnemonics
-      - it must be implemented !
   """
-
-  # Default delay slot
-  # Note:
-  #   - mandatory for the miasm Machine
   delayslot = 0
 
   def __init__(self, name, mode, args, additional_info=None):
@@ -66,10 +58,22 @@ class instruction_pinky(instruction):
       return str(expr)
 
   def to_string(self, loc_db=None):
-    # mov reg1, @[reg2] -> mov @[reg2], reg1
-    if self.name == 'MOV' and self.args[1].is_mem() and self.args[1].ptr.is_id():
+    # mov3 reg1, @[reg2] -> mov @[reg2], reg1
+    if self.name == 'MOV3' and self.args[1].is_mem() and self.args[1].ptr.is_id():
       self.args[1], self.args[0] = self.args[0], self.args[1]
+    # mov1, mov2, mov3, -> mov
+    if self.name.startswith('MOV'):
+      self.name = 'MOV'
+
+    if self.name == 'XOR':
+      self.args[1], self.args[2] = self.args[2], self.args[1]
     return super(instruction_pinky, self).to_string(loc_db)
+
+  def fixDstOffset(self):
+    e = self.args[self.get_dst_num()]
+    if e.is_int():
+      return
+    self.args[self.get_dst_num()] = e + self.offset + 2
 
   def breakflow(self):
     """Instructions that stop a basic block."""
@@ -110,7 +114,6 @@ class instruction_pinky(instruction):
   def is_subcall(self):
     """
     Instructions used to call sub functions.
-    pinky Does not have calls.
     """
     return False
 
@@ -242,7 +245,6 @@ class pinky_reg_deref(pinky_arg):
     self.expr = ExprMem(self.expr, self.expr.size)
     return True
 
-
 class pinky_imm8(imm_noarg, pinky_arg):
   """Generic pinky immediate
   Note:
@@ -288,7 +290,7 @@ imm8  = bs(l=8,   cls=(pinky_imm8,  pinky_arg))
 imm16 = bs(l=16,  cls=(pinky_imm16, pinky_arg))
 imm32 = bs(l=32,  cls=(pinky_imm32, pinky_arg))
 
-addop("VMEXIT", [bs("00000000")])                 # 0
+# addop("VMEXIT", [bs("00000000")])                 # 0
 addop("MOV",    [bs("00000001"), reg, imm16])     # 1
 # addop("PRNHEX", [bs("00000010"), reg])            # 2
 # addop("STR2INT",[bs("00000011"), reg])            # 3
@@ -316,9 +318,9 @@ addop("CMP",    [bs("01000010"), reg, imm32])     # 66
 # addop("STRCMP", [bs("01000011"), reg])            # 67
 # addop("ISPTR",  [bs("01000100"), reg])            # 68
 # addop("ISIMM",  [bs("01000101"), reg])            # 69
-addop("MOV",    [bs("01010001"), reg, reg])       # 81  # REG TO REG OR MEM TO REG
-addop("MOV",    [bs("01100000"), reg, reg])       # 96  # REG TO REG
-addop("MOV",    [bs("01100001"), reg, reg_deref])       # 97  # MEMORY
+addop("MOV1",    [bs("01010001"), reg, reg])       # 81  # REG TO REG OR MEM TO REG
+addop("MOV2",    [bs("01100000"), reg, reg_deref])       # 96  # REG TO REG
+addop("MOV3",    [bs("01100001"), reg, reg_deref])       # 97  # MEMORY
 # addop("REP STOSD", [bs("01100010"), reg, reg, reg])  # 98
 # addop("PUSH",   [bs("01110000"), reg])            # 112
 # addop("POP",    [bs("01110001"), reg])            # 113
