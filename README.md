@@ -1,6 +1,6 @@
-## Что?
+## What?
 
-Processor module written for custom virtual machine called Picky `Miasm`.
+Processor module written for custom virtual machine called Picky in `Miasm`.
 
 ## raw disassembly
 ![](test.png)
