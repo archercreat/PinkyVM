@@ -1,6 +1,6 @@
 ## What?
 
-Processor module written for custom virtual machine called Picky in `Miasm`.
+Processor module written for custom virtual machine called Pinky in `Miasm`.
 
 ## raw disassembly
 ![](test.png)
